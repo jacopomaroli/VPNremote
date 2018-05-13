@@ -1,0 +1,151 @@
+<html>
+<head>
+<style type="text/css">
+* { margin:0; padding:0; }
+#main { margin:0 auto; width:990px; }
+#clientList {  border-collapse: collapse; }
+#clientList * { font: 15px/19px Arial; font-family: "Lucida Sans Unicode", "Lucida Grande", sans-serif; }
+#clientList td, #clientList tr { text-align: left; }
+#clientList tr td:nth-child(1) { width: 120px; }
+#clientList tr td:nth-child(2) { width: 60px; }
+#clientList tr td:nth-child(3) { width: 60px; }
+#clientList tr td:nth-child(3) button { width: 100%; line-height: 15px;}
+#addForm { font-size: 0px}
+#addForm * { font: 15px/19px Arial; font-family: "Lucida Sans Unicode", "Lucida Grande", sans-serif; }
+#addForm input { border: 0; }
+#addForm *[name=ip] { width: 120px;}
+#addForm *[name=port] { width: 60px;}
+#addForm #add { width: 60px; line-height: 15px;}
+</style>
+<script type="text/javascript">
+let e_clientList = null;
+let clientList = {};
+
+function removeAllChildren(node) {
+	while (node.firstChild) {
+    	node.removeChild(node.firstChild);
+	}
+}
+
+function add_addClientHandler() {
+	const eIP = document.querySelectorAll("#addForm *[name=ip]")[0];
+	const ePort = document.querySelectorAll("#addForm *[name=port]")[0];
+	const eAdd = document.querySelectorAll("#addForm #add")[0];
+
+	function addClientHandler(e) {
+		const ip = eIP.value;
+		const port = ePort.value;
+		const xhr = new XMLHttpRequest();
+
+		xhr.onload = updateClientList
+  		xhr.onerror = function(){ console.error(xhr.responseText); }
+	    xhr.open("POST", "/v1/mark");
+		xhr.setRequestHeader('Content-type', 'application/x-www-form-urlencoded');
+	    xhr.send("ip=" + ip + "&port=" + port);
+	}
+
+	eAdd.addEventListener("click", addClientHandler);
+}
+
+function add_removeClientHandler(e_removeBtn, ip, port) {
+
+	function removeClientHandler(e) {
+		const xhr = new XMLHttpRequest();
+
+		xhr.onload = updateClientList
+  		xhr.onerror = function(){ console.error(xhr.responseText); }
+	    xhr.open("DELETE", "/v1/mark");
+		xhr.setRequestHeader('Content-type', 'application/x-www-form-urlencoded');
+	    xhr.send("ip=" + ip + "&port=" + port);
+	}
+
+	e_removeBtn.addEventListener("click", removeClientHandler);
+}
+
+function _get_clients(resolve, reject) {
+	function contentLoaded() {
+		clientList = JSON.parse(xhr.responseText);
+		resolve();
+	}
+
+	const xhr = new XMLHttpRequest();
+
+	xhr.onload = contentLoaded
+	xhr.onerror = reject
+    xhr.open("GET", "/v1/marks");
+	xhr.setRequestHeader('Content-type', 'application/x-www-form-urlencoded');
+    xhr.send();
+}
+
+function get_clients() {
+	return new Promise(function(resolve, reject) {
+		_get_clients(resolve, reject);
+	})
+}
+
+function updateClientListUI()
+{
+	var c = document.createDocumentFragment();
+
+	const propOrder = ["ip", "port"];
+
+	for (let client of clientList) {
+		let e_tr = document.createElement("tr");
+
+		for (let prop of propOrder) {
+			let value = client[prop];
+			let e_td = document.createElement("td");
+			let e_text = document.createTextNode(value);
+			e_td.appendChild(e_text);
+			e_tr.appendChild(e_td);
+		}
+
+		let e_td = document.createElement("td");
+		let e_removeBtn = document.createElement("button");
+		let e_text = document.createTextNode("remove");
+		e_removeBtn.appendChild(e_text);
+		add_removeClientHandler(e_removeBtn, client.ip, client.port);
+		e_td.appendChild(e_removeBtn);
+		e_tr.appendChild(e_td);
+
+		c.appendChild(e_tr);
+	}
+
+	removeAllChildren(e_clientList);
+	e_clientList.appendChild(c);
+}
+
+function updateClientList()
+{
+	return get_clients()
+		   .then(updateClientListUI)
+		   .catch((error) => {
+		   		console.error(error);
+		   })
+}
+
+function init_clientList()
+{
+	e_clientList = document.querySelectorAll("#clientList")[0];
+}
+
+function init() {
+	add_addClientHandler();
+	init_clientList();
+	updateClientList();
+}
+
+document.addEventListener("DOMContentLoaded", init);
+</script>
+</head>
+<body>
+<div id="main">
+	<table id="clientList"></table>
+	<div id="addForm">
+		<input name="ip" type="text" value="192.168.1.123">
+		<input name="port" type="text" value="8888">
+		<button id="add">add</button>
+	</div>
+</div>
+</body>
+</html>

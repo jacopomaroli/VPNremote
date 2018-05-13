@@ -1,0 +1,148 @@
+#include "main.h"
+
+volatile sig_atomic_t done = 0;
+
+
+void term(int signum)
+{
+    done = 1;
+    printf("received: %s\n", strsignal(signum));
+}
+
+static int handler(void* user, const char* section, const char* name,
+                   const char* value)
+{
+    configuration* pconfig = (configuration*)user;
+
+    #define MATCH(s, n) strcmp(section, s) == 0 && strcmp(name, n) == 0
+    if (MATCH("main", "logFile")) {
+        pconfig->logFile = strdup(value);
+    } else {
+        return 0;  /* unknown section/name, error */
+    }
+    return 1;
+}
+
+/**
+ * \brief Print help for this application
+ */
+void print_help(void)
+{
+	printf("\n Usage: VPNremote [OPTIONS]\n\n");
+	printf("  Options:\n");
+	printf("   -h --help                 Print this help\n");
+	printf("   -c --conf_file filename   Read configuration from the file\n");
+	printf("   -l --log_file  filename   Write logs to the file\n");
+	printf("   -d --daemon               Daemonize this application\n");
+	printf("   -p --pid_file  filename   PID file used by daemonized app\n");
+	printf("\n");
+}
+
+int main(int argc, char *argv[])
+{
+	unsigned int port = 8080;
+	struct _u_instance instance;
+	struct _u_map mime_types;
+	int res;
+	FILE * log_stream;
+	configuration config;
+	char *app_name  = "VPN_remote";
+	char *log_file_name;
+	char *conf_file_name;
+	static char *pid_file_name = 0;
+
+	static struct option long_options[] = {
+		{"conf_file", required_argument, 0, 'c'},
+		{"log_file", required_argument, 0, 'l'},
+		{"help", no_argument, 0, 'h'},
+		{"daemon", no_argument, 0, 'd'},
+		{"pid_file", required_argument, 0, 'p'},
+		{NULL, 0, 0, 0}
+	};
+
+	int value, option_index = 0;
+	int start_daemonized = 0;
+
+	app_name = argv[0];
+
+	/* Try to process all command line arguments */
+	while ((value = getopt_long(argc, argv, "c:l:t:p:dh", long_options, &option_index)) != -1) {
+		switch (value) {
+			case 'c':
+				conf_file_name = strdup(optarg);
+				break;
+			case 'l':
+				log_file_name = strdup(optarg);
+				break;
+			case 'p':
+				pid_file_name = strdup(optarg);
+				break;
+			case 'd':
+				start_daemonized = 1;
+				break;
+			case 'h':
+				print_help();
+				return EXIT_SUCCESS;
+			case '?':
+				print_help();
+				return EXIT_FAILURE;
+			default:
+				break;
+		}
+	}
+
+	if (ini_parse(conf_file_name, handler, &config) < 0) {
+		printf("Can't load '%s'\n", conf_file_name);
+	    return 1;
+	}
+
+	if(MHD_is_feature_supported(MHD_FEATURE_EPOLL) == MHD_YES)
+	{
+		printf("epoll supported\n");
+	}
+
+	if (check_root())
+	{
+		return 1;
+	}
+
+	if(start_daemonized == 1)
+	{
+		if( (res=daemonize(app_name,"/opt/opt/VPN_remote",NULL,NULL,NULL)) != 0 )
+		{
+			fprintf(stderr,"error: daemonize failed\n");
+			exit(EXIT_FAILURE);
+		}
+	}
+
+	print_cwd();
+
+	openlog(app_name, LOG_PID|LOG_CONS, LOG_DAEMON);
+	syslog(LOG_INFO, "Started %s", app_name);
+
+	log_stream = fopen(log_file_name,"a+");
+
+	fputs ("service started\n",log_stream);
+	fflush (log_stream);
+
+	register_interrupt_handlers(&term);
+
+	if (startServer(&instance, port, &mime_types))
+	{
+		return 1;
+	}
+
+	while (!done)
+	{
+		sleep(1);
+	}
+
+	stopServer(&instance, &mime_types);
+
+	fputs ("service stopped\n",log_stream);
+	fflush (log_stream);
+
+	fclose(log_stream);
+
+	return 0;
+}
